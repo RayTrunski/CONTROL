@@ -5,11 +5,11 @@ import java.time.LocalDate
 import java.util.UUID
 
 data class Account(val id: String = UUID.randomUUID().toString(), val name: String)
-data class SavingsGoal(val id: String = UUID.randomUUID().toString(), val name: String, val target: Long, val deadline: LocalDate? = null, val icon: String = "bag")
+data class SavingsGoal(val id: String = UUID.randomUUID().toString(), val name: String, val target: Long, val deadline: LocalDate? = null, val icon: String = "bag", val archived: Boolean = false)
 enum class Operation { INCOME, EXPENSE, TRANSFER, RESERVE, RELEASE }
-data class Movement(val id: String = UUID.randomUUID().toString(), val type: Operation, val cents: Long, val account: String, val destination: String? = null, val description: String = "", val date: LocalDate = LocalDate.now(), val category: String = "Otros", val goal: String? = null)
+data class Movement(val id: String = UUID.randomUUID().toString(), val type: Operation, val cents: Long, val account: String, val destination: String? = null, val description: String = "", val date: LocalDate = LocalDate.now(), val category: String = "Otros", val goal: String? = null, val subcategory: String = "")
 /** Immutable ledger. Money is represented as integer cents. */
-data class Ledger(val accounts: List<Account> = emptyList(), val movements: List<Movement> = emptyList(), val goals: List<SavingsGoal> = emptyList()) {
+data class Ledger(val accounts: List<Account> = emptyList(), val movements: List<Movement> = emptyList(), val goals: List<SavingsGoal> = emptyList(), val plans: List<PlannedOperation> = emptyList(), val sources: List<IncomeSource> = emptyList()) {
     fun balance(id: String): Long = movements.fold(0L) { sum, m -> Math.addExact(sum, when {
         m.type == Operation.TRANSFER && m.destination == id -> m.cents
         m.account != id -> 0L
@@ -42,14 +42,14 @@ data class Ledger(val accounts: List<Account> = emptyList(), val movements: List
         require(movements.none { it.id == m.id }) { "Movimiento ya registrado." }
         return copy(movements = movements + m).validated()
     }
-    fun delete(id: String) = copy(movements = movements.filterNot { it.id == id }).validated()
+    fun delete(id: String) = copy(movements = movements.filterNot { it.id == id }, plans = plans.map { if(it.movementId==id) it.copy(status=PlanStatus.CANCELLED,movementId=null,executedDate=null) else it }).validated()
     fun edit(m: Movement): Ledger {
         require(movements.any { it.id == m.id })
         return copy(movements = movements.map { if(it.id == m.id) m else it }).validated()
     }
-    private fun validated(): Ledger {
+    internal fun validated(): Ledger {
         movements.forEach { m ->
-            require(m.cents > 0) { "El importe debe ser mayor a cero." }
+            require(m.date <= LocalDate.now()) { "Registra las operaciones futuras en Planificar." }; require(m.cents > 0) { "El importe debe ser mayor a cero." }
             require(accounts.any { it.id == m.account }) { "Cuenta inválida." }
             if(m.type == Operation.TRANSFER) require(m.destination != m.account && accounts.any { it.id == m.destination }) { "Selecciona otra cuenta de destino." }
             else require(m.destination == null)
@@ -68,6 +68,7 @@ data class Ledger(val accounts: List<Account> = emptyList(), val movements: List
     }
 }
 fun parseCents(text: String): Long {
-    require(Regex("[0-9]+(\\.[0-9]{1,2})?").matches(text.trim())) { "Usa un importe como 250.50, con máximo dos decimales." }
-    return BigDecimal(text.trim()).movePointRight(2).longValueExact().also { require(it > 0) { "El importe debe ser positivo." } }
+    val normalized=text.trim().replace(',', '.')
+    require(Regex("[0-9]+(\\.[0-9]{0,2})?").matches(normalized)) { "Escribe un importe válido, por ejemplo 1900 o 1900.50." }
+    return BigDecimal(normalized).movePointRight(2).longValueExact().also { require(it > 0) { "El importe debe ser positivo." } }
 }

@@ -12,6 +12,7 @@ class StartupRenderingTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun startupDrawsRealPixelsAndNavigationRemainsUsable() {
+        compose.waitUntil(timeoutMillis = 20000) { compose.onAllNodesWithText("Saldo total").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Saldo total").assertIsDisplayed()
         // Semantics can exist while SurfaceFlinger still shows a black screen.
         // Validate the actual display, rather than only the Compose node tree.

@@ -40,24 +40,15 @@ internal fun ScreenHeader(title: String,subtitle: String,onSettings: () -> Unit)
             Text(title,fontSize=24.sp,fontWeight=FontWeight.Bold,color=Ink)
             Text(subtitle,fontSize=12.sp,color=Muted)
         }
-        Box(Modifier.size(44.dp).clip(CircleShape).background(Color(0xFFECEEF3)).clickable(onClick=onSettings).semantics { contentDescription="Abrir ajustes y perfil" },contentAlignment=Alignment.Center) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick=onSettings).semantics { contentDescription="Abrir ajustes y perfil" },contentAlignment=Alignment.Center) {
             Glyph("user",Ink,Modifier.size(27.dp))
             Box(Modifier.align(Alignment.BottomEnd).padding(4.dp).size(8.dp).background(Green,CircleShape))
         }
     }
 }
-private fun Movement.visual(): Pair<String,Color> = when(type) {
-    Operation.INCOME -> "bag" to Green
-    Operation.TRANSFER -> "transfer" to Color(0xFF3478FF)
-    Operation.RESERVE,Operation.RELEASE -> "pig" to Color(0xFFFF931C)
-    Operation.EXPENSE -> when(category) {
-        "Alimentación" -> "cart" to Green
-        "Transporte" -> "car" to Color(0xFF3478FF)
-        "Servicios" -> "bulb" to Color(0xFFA34FFF)
-        "Vivienda" -> "home" to Color(0xFFFF931C)
-        "Salud" -> "plus" to Color(0xFFFF5276)
-        else -> "minus" to Color(0xFFFF931C)
-    }
+private fun Movement.visual(): Pair<String,Color> {
+    val style=if(type==Operation.EXPENSE) categoryIcon(category) else type.iconStyle()
+    return style.icon to style.color
 }
 internal fun Movement.signedAmount(): String = when(type) {
     Operation.INCOME -> "+ ${money(cents)}"
@@ -89,39 +80,41 @@ internal fun Ledger.filteredMovements(query: String,type: Operation?,month: Year
 }.sortedByDescending { it.date }
 
 @Composable
-internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> Unit,onMovement: (Movement) -> Unit) {
+internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> Unit,onMovement: (Movement) -> Unit, sharedFilter: AnalysisFilter = AnalysisFilter(), onFilter: (AnalysisFilter)->Unit = {}) {
     var type by rememberSaveable { mutableStateOf<Operation?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
-    var account by rememberSaveable { mutableStateOf<String?>(null) }
-    var category by rememberSaveable { mutableStateOf<String?>(null) }
+    var knownCount by remember { mutableIntStateOf(ledger.movements.size) }
+    LaunchedEffect(ledger.movements.size) {
+        if(ledger.movements.size>knownCount) { type=null; query="" }
+        knownCount=ledger.movements.size
+    }
+    val category=sharedFilter.category
     var filters by remember { mutableStateOf(false) }
-    val month=monthText.takeIf { it.isNotBlank() }?.let { YearMonth.parse(it) }
-    val entries=ledger.filteredMovements(query,type,month,account,category)
+    val entries=ledger.filteredMovements(query,type,null,sharedFilter.account,sharedFilter.category).filter(sharedFilter::matches)
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(top=18.dp,bottom=88.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             ScreenHeader("Movimientos","Todos tus ingresos, gastos y transferencias",onSettings)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-                listOf("Todos" to null,"Ingresos" to Operation.INCOME,"Gastos" to Operation.EXPENSE,"Transferencias" to Operation.TRANSFER).forEach { (label,value) ->
-                    Surface(onClick={ type=value },shape=RoundedCornerShape(10.dp),color=if(type==value) Green else Color(0xFFEBEEF3),modifier=Modifier.semantics { selected=type==value }) {
+                listOf("Todos" to null,"Ingresos" to Operation.INCOME,"Gastos" to Operation.EXPENSE,"Transferencias" to Operation.TRANSFER,"Aportaciones" to Operation.RESERVE,"Retiros" to Operation.RELEASE).forEach { (label,value) ->
+                    Surface(onClick={ type=value },shape=RoundedCornerShape(10.dp),color=if(type==value) Green else MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.semantics { selected=type==value }) {
                         Text(label,Modifier.padding(horizontal=14.dp,vertical=11.dp),fontSize=11.sp,color=if(type==value) Color.White else Muted)
                     }
                 }
             }
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(query,{ query=it },Modifier.weight(1f),placeholder={ Text("Buscar movimientos…",fontSize=12.sp) },singleLine=true,shape=RoundedCornerShape(14.dp),leadingIcon={ Glyph("search") },colors=OutlinedTextFieldDefaults.colors(unfocusedBorderColor=Color.Transparent,focusedBorderColor=Green,unfocusedContainerColor=Color(0xFFEBEEF3)))
-                IconButton(onClick={ filters=true },modifier=Modifier.background(if(category==null) Color(0xFFEBEEF3) else Green.copy(alpha=.15f),RoundedCornerShape(12.dp)).semantics { contentDescription="Filtrar movimientos por categoría" }) { Glyph("list",if(category==null) Muted else Green) }
+                OutlinedTextField(query,{ query=it },Modifier.weight(1f),placeholder={ Text("Buscar movimientos…",fontSize=12.sp) },singleLine=true,shape=RoundedCornerShape(14.dp),leadingIcon={ Glyph("search") },colors=OutlinedTextFieldDefaults.colors(unfocusedBorderColor=Color.Transparent,focusedBorderColor=Green,unfocusedContainerColor=MaterialTheme.colorScheme.surfaceVariant))
+                IconButton(onClick={ filters=true },modifier=Modifier.background(if(category==null) MaterialTheme.colorScheme.surfaceVariant else Green.copy(alpha=.15f),RoundedCornerShape(12.dp)).semantics { contentDescription="Filtrar movimientos por categoría" }) { Glyph("list",if(category==null) Muted else Green) }
             }
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                val months=(listOf(YearMonth.now())+ledger.movements.map { YearMonth.from(it.date) }).distinct().sortedDescending()
-                FilterMenu(month?.format(DateTimeFormatter.ofPattern("MMMM yyyy",MexicanLocale)) ?: "Todas las fechas",listOf("Todas las fechas")+months.map { it.format(DateTimeFormatter.ofPattern("MMMM yyyy",MexicanLocale)) },Modifier.weight(1f)) { monthText=if(it==0) "" else months[it-1].toString() }
-                FilterMenu(ledger.accounts.firstOrNull { it.id==account }?.name ?: "Todas las cuentas",listOf("Todas las cuentas")+ledger.accounts.map { it.name },Modifier.weight(1f)) { account=if(it==0) null else ledger.accounts[it-1].id }
-            }
-            if(category!=null) TextButton(onClick={ category=null }) { Text("${category} ×",fontSize=12.sp) }
-            if(entries.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),color=Color.White) {
+            SharedFilters(ledger,sharedFilter,onFilter)
+            if(category!=null) TextButton(onClick={ onFilter(sharedFilter.copy(category=null)) }) { Text("${category} ×",fontSize=12.sp) }
+            if(entries.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
                 Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("Sin movimientos",fontWeight=FontWeight.SemiBold)
                     Text("Registra una operación o cambia los filtros para consultar tu historial.",color=Muted,fontSize=13.sp)
+                    if(ledger.movements.isNotEmpty()) TextButton(onClick={
+                        type=null; query=""
+                        onFilter(sharedFilter.copy(account=null,category=null,cadence=Cadence.CUSTOM,customStart=ledger.movements.minOf { it.date },customEnd=LocalDate.now(),viewDate=null))
+                    }) { Text("Ver todos los movimientos") }
                 }
             }
             entries.groupBy { it.date }.forEach { (date,movements) ->
@@ -130,7 +123,7 @@ internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> 
                     val net=movements.fold(0L) { sum,m -> Math.addExact(sum,when(m.type) { Operation.INCOME -> m.cents; Operation.EXPENSE -> -m.cents; else -> 0L }) }
                     Text("${if(net>0) "+ " else if(net<0) "- " else ""}${money(if(net<0) Math.negateExact(net) else net)}",fontSize=12.sp,fontWeight=FontWeight.Medium,color=if(net>0) Green else Muted)
                 }
-                Surface(shape=RoundedCornerShape(16.dp),color=Color.White) {
+                Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
                     Column(Modifier.padding(horizontal=8.dp)) { movements.forEach { m -> MovementRow(ledger,m) { onMovement(m) } } }
                 }
             }
@@ -140,28 +133,14 @@ internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> 
     if(filters) AlertDialog(onDismissRequest={ filters=false },title={ Text("Filtrar por categoría") },text={
         Column(Modifier.verticalScroll(rememberScrollState())) {
             (listOf("Todas las categorías")+expenseCategories).forEachIndexed { i,label ->
-                Row(Modifier.fillMaxWidth().clickable { category=if(i==0) null else label; filters=false },verticalAlignment=Alignment.CenterVertically) {
-                    RadioButton(selected=if(i==0) category==null else category==label,onClick={ category=if(i==0) null else label; filters=false })
+                Row(Modifier.fillMaxWidth().clickable { onFilter(sharedFilter.copy(category=if(i==0) null else label)); filters=false },verticalAlignment=Alignment.CenterVertically) {
+                    RadioButton(selected=if(i==0) category==null else category==label,onClick={ onFilter(sharedFilter.copy(category=if(i==0) null else label)); filters=false })
                     Text(label,fontSize=14.sp)
                 }
             }
         }
     },confirmButton={ TextButton(onClick={ filters=false }) { Text("Cerrar") } })
 }
-@Composable
-private fun FilterMenu(label: String,options: List<String>,modifier: Modifier,choose: (Int) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Surface(onClick={ expanded=true },shape=RoundedCornerShape(12.dp),color=Color.White,shadowElevation=1.dp) {
-            Row(Modifier.fillMaxWidth().padding(11.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text(label.replaceFirstChar { it.titlecase(MexicanLocale) },Modifier.weight(1f),fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis,color=Ink)
-                Text("⌄",color=Muted)
-            }
-        }
-        DropdownMenu(expanded,onDismissRequest={ expanded=false }) { options.forEachIndexed { index,value -> DropdownMenuItem(text={ Text(value) },onClick={ choose(index); expanded=false }) } }
-    }
-}
-
 private val GoalColors=listOf(Color(0xFF1681FF),Color(0xFFA04EFF),Color(0xFFFF941E),Color(0xFFFF6088))
 @Composable
 internal fun SavingsScreen(ledger: Ledger,onSettings: () -> Unit,onNew: () -> Unit,onGoal: (SavingsGoal) -> Unit) {
@@ -177,12 +156,12 @@ internal fun SavingsScreen(ledger: Ledger,onSettings: () -> Unit,onNew: () -> Un
             }
             Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Text("${ledger.goals.count { ledger.goalBalance(it.id)<it.target }} apartados activos",fontSize=12.sp,color=Color.White)
+                    Text("${ledger.goals.count { !it.archived && ledger.goalBalance(it.id)<it.target }} Metas en progreso",fontSize=12.sp,color=Color.White)
                     ProgressTrack(ratio(ledger.held,ledger.total),Color(0xFFAEF5C6),Color.White.copy(alpha=.25f))
                 }
                 Column(horizontalAlignment=Alignment.End) {
                     Text(percent(ledger.held,ledger.total),fontSize=20.sp,fontWeight=FontWeight.SemiBold,color=Color.White)
-                    Text("de tus activos",fontSize=11.sp,color=Color.White)
+                    Text("de tu saldo total",fontSize=11.sp,color=Color.White)
                 }
             }
         }
@@ -190,16 +169,16 @@ internal fun SavingsScreen(ledger: Ledger,onSettings: () -> Unit,onNew: () -> Un
             Text("Mis apartados",Modifier.weight(1f),fontSize=19.sp,fontWeight=FontWeight.Bold,color=Ink)
             Button(onClick=onNew,contentPadding=PaddingValues(horizontal=16.dp,vertical=7.dp)) { Glyph("plus",Color.White,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Nuevo",fontSize=12.sp) }
         }
-        if(ledger.goals.isEmpty()) Surface(shape=RoundedCornerShape(20.dp),color=Color.White) {
+        if(ledger.goals.isEmpty()) Surface(shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("Tu próxima meta empieza aquí",fontWeight=FontWeight.SemiBold)
                 Text("Crea un apartado, define cuánto quieres ahorrar y agrega fondos desde tus cuentas.",color=Muted,fontSize=13.sp)
             }
         }
-        ledger.goals.forEachIndexed { index,goal ->
+        ledger.goals.filterNot { it.archived }.forEachIndexed { index,goal ->
             val color=GoalColors[index%GoalColors.size]
             val saved=ledger.goalBalance(goal.id)
-            Surface(onClick={ onGoal(goal) },shape=RoundedCornerShape(20.dp),color=Color.White) {
+            Surface(onClick={ onGoal(goal) },shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
                 Row(Modifier.fillMaxWidth().padding(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(48.dp).background(color.copy(alpha=.15f),CircleShape),contentAlignment=Alignment.Center) { Glyph(goal.icon,color,Modifier.size(28.dp)) }
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {

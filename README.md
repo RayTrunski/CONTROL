@@ -1,61 +1,43 @@
 # Control
 
-Aplicación Android de finanzas personales, local y en MXN, desarrollada con Kotlin y Jetpack Compose.
+Plataforma Android de **gestión y planificación financiera personal**, completamente local, en MXN. Kotlin, Jetpack Compose, Room, DataStore y MVVM con Repository.
 
-## Primera entrega
+## Fase 1
 
-- Motor financiero inmutable con importes en centavos (`Long`) y validación de saldos.
-- Creación de cuentas y pantalla inicial con saldo total, apartado y disponible.
-- Registro manual de ingresos, gastos, transferencias, reservas y liberaciones.
-- Eliminación de movimientos con validación del saldo resultante; edición disponible en el motor.
-- Pruebas unitarias de las reglas financieras y de conversión exacta de importes.
+- Tres pestañas: Inicio, Movimientos y Apartados. Acceso secundario **Planificar** desde Inicio.
+- Cuentas con saldo actual total, reservado y disponible; desglose individual en Ajustes.
+- Filtros compartidos de cuenta, categoría y periodo entre Inicio y Movimientos. Periodos semanal, catorcenal, quincenal, mensual y personalizado, con fechas de referencia configurables y guardadas en DataStore.
+- Ingresos, gastos con categoría y subcategoría, transferencias entre cuentas, aportaciones y retiros. Edición y eliminación con validación de los saldos resultantes. Las operaciones internas no cuentan como ingresos ni gastos.
+- Metas en progreso, metas completadas visibles, edición para reabrir objetivos, archivado y reapertura desde Ajustes. Historial y aportaciones previstas en el detalle de cada meta.
+- Planificación mensual de ingresos, gastos y aportaciones, edición, cancelación y eliminación de pendientes. Estados pendiente, ejecutado y cancelado.
+- Fuentes de ingreso semanales, catorcenales, quincenales y mensuales. Las fechas parten de la referencia configurada; catorcenal significa cada 14 días. Se ajustan días como el 31 al último día del mes. Quitar una fuente conserva las operaciones ya confirmadas.
+- Proyección encadenada entre meses con saldo libre y patrimonial separados. Las reservas futuras reducen solo el saldo libre. Los saldos proyectados negativos se resaltan.
+- Confirmación de planes como movimientos reales con la fecha de confirmación y cuenta seleccionada; vínculo persistente e identificador determinista para impedir duplicados.
+- Perfil local, persistencia offline, CSV con importes reales y previstos diferenciados y respaldo/restauración JSON mediante el selector de documentos Android.
 
-## Inicio
+## Persistencia e integridad
 
-- Diseño basado en la referencia: tarjeta verde de saldo, resumen mensual, gráfica de dona, accesos rápidos y barra inferior.
-- Saldo total, disponible y apartado calculados desde el motor, con opción de ocultar importes.
-- Ingresos y gastos del mes con distribución en ocho intervalos y comparación contra el mes anterior. Sin datos del mes anterior, no se inventa un porcentaje.
-- Distribución de gastos por categoría, alimentada por la selección de categoría al registrar gastos.
-- Formularios de ingresos, gastos, transferencias y reservas; creación de la primera cuenta desde el registro.
-- Últimos movimientos con acceso al detalle y al historial completo.
-- Barra inferior con Inicio, Movimientos y Apartados. Ajustes y perfil se abren desde el icono de usuario de cada pantalla; el análisis de categorías se consulta desde «Ver más».
-- Inicio vacío por defecto, sin saldos ni operaciones de demostración. Vista previa de Compose disponible en `HomeScreen.kt`.
+El Repository guarda el libro financiero completo como un estado versionado dentro de una transacción Room. Así, los movimientos, sus vínculos de planificación y sus efectos sobre los saldos se guardan juntos. Los saldos se derivan del historial; no existen contadores independientes que puedan quedar desactualizados. Los importes y cálculos monetarios usan centavos `Long` y operaciones exactas; las aproximaciones se limitan al dibujo de gráficas.
 
-## Movimientos y apartados
+La base local comienza en la versión 1, sin migraciones destructivas. La entrega anterior mantenía todo en memoria y no tenía una base persistente que migrar. Las futuras versiones de la base o del formato de respaldo deberán incorporar migraciones explícitas. Los errores de lectura se muestran sin sustituir silenciosamente los datos por un libro vacío.
 
-- Historial agrupado por día, resumen diario de ingresos menos gastos y detalle de operaciones.
-- Pestañas de todos, ingresos, gastos y transferencias; búsqueda y filtros por mes, cuenta y categoría. Las transferencias aparecen para la cuenta de origen y la de destino.
-- Botón flotante para registrar operaciones.
-- Apartados individuales con nombre, icono, monto objetivo y fecha opcional; tarjetas con avance y detalle del dinero reservado por cuenta.
-- Agregar y retirar fondos por apartado. El motor impide retirar fondos de otra meta o cuenta y mantiene el saldo total sin generar ingresos o gastos.
+Los respaldos financieros incluyen cuentas, movimientos, metas, fuentes, planes, estados, fechas y vínculos. Se validan antes de reemplazar los datos actuales; una restauración inválida conserva el libro anterior. El perfil y las preferencias de consulta pertenecen al dispositivo. Antes de restaurar se muestra una confirmación porque reemplaza el libro completo.
 
-Los gráficos usan proporciones aproximadas únicamente para dibujar; los importes y las sumas conservan centavos enteros. La interfaz actual sigue el tema claro de la referencia.
+## Supuestos de planificación básica
 
-Esta entrega es un prototipo en memoria: los datos se pierden al cerrar o recrear la actividad. No debe usarse todavía para guardar información financiera real.
+Las proyecciones parten del dinero real actual y consideran operaciones pendientes desde hoy. Los ingresos y gastos se suponen ejecutados según las fechas previstas; no se generan movimientos reales automáticamente. El mes actual representa el resto del mes desde hoy; los meses siguientes parten del cierre libre proyectado anterior. Los pendientes vencidos siguen visibles en su mes para reprogramarlos o confirmarlos.
 
-## Siguientes etapas
+El CSV incluye todo el historial, todos los planes almacenados y los cobros generados del mes actual y los doce meses siguientes. El respaldo conserva las fuentes completas para regenerar fechas posteriores a ese horizonte.
 
-1. Persistencia Room con transacciones atómicas y conservación del estado durante el ciclo de vida de Android.
-2. Perfil local, cuentas con tipo, saldo inicial, color y archivado.
-3. Gestión personalizada de categorías, edición de movimientos e ingresos esperados.
-4. Edición y archivado de objetivos; ampliar las tres secciones y los ajustes del perfil.
-5. Historial y estadísticas después de verificar el motor persistente.
-6. CSV, respaldo local y restauración validada mediante el selector de documentos Android.
-
-Los requisitos originales se encuentran en `Requirimientos.md`.
+No se incluyen servicios externos, bancos, sincronización, presupuestos avanzados ni XLSX.
 
 ## Verificación
 
-Si el emulador muestra una pantalla negra, consultar [diagnóstico y correcciones del entorno](docs/BLACK_SCREEN.md). Se añadió una prueba instrumentada que verifica píxeles reales del inicio y la navegación, además de las pruebas unitarias.
-
-En Windows, con JDK y Android SDK configurados:
-
 ```powershell
 .\gradlew.bat assembleDebug testDebugUnitTest --console=plain
-```
-
-Con un emulador o dispositivo conectado:
-
-```powershell
 .\gradlew.bat connectedDebugAndroidTest --console=plain
 ```
+
+Las pruebas cubren saldos, transferencias, reservas, edición y eliminación, fechas salariales, proyecciones negativas, confirmación idempotente, reapertura de metas, filtros, respaldo/restauración, reapertura de Room y rollback atómico. La prueba de inicio comprueba píxeles reales y navegación. Si el emulador muestra una pantalla negra, consultar [diagnóstico del entorno](docs/BLACK_SCREEN.md).
+
+Requisitos: [ampliación de fase 1](<Requisitos fase 1.md>) y [documento original](Requirimientos.md).

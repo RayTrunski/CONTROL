@@ -48,6 +48,8 @@ class FinanceTest {
     }
     @Test fun moneyParsingIsExact() {
         assertEquals(25050L, parseCents("250.50"))
+        assertEquals(190000L, parseCents("1900."))
+        assertEquals(190050L, parseCents("1900,50"))
         assertEquals(10L, parseCents("0.10"))
         listOf("0", "-1", "1.001", "NaN", "1,000").forEach { input ->
             assertThrows(IllegalArgumentException::class.java) { parseCents(input) }

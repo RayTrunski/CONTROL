@@ -16,3 +16,4 @@ local.properties
 
 # Repositorio anidado vacío, ajeno a los archivos de la aplicación.
 /CONTROL/
+/.kotlin/
