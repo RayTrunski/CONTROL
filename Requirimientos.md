@@ -1,4 +1,4 @@
-Módulos de la Fase 1
+****Módulos de la Fase 1
 ID	Módulo	Prioridad
 M01	Configuración y perfil local	Esencial
 M02	Cuentas y saldos	Esencial
@@ -172,4 +172,4 @@ Ajustes
 
 El registro de ingresos y gastos se haría mediante un botón flotante o una acción principal accesible desde Inicio y Movimientos.
 
-Las cuentas y categorías podrían gestionarse desde Ajustes, evitando sobrecargar la barra principal.
+Las cuentas y categorías podrían gestionarse desde Ajustes, evitando sobrecargar la barra principal.****

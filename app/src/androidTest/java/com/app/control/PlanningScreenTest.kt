@@ -11,6 +11,22 @@ import java.time.YearMonth
 
 class PlanningScreenTest {
     @get:Rule val compose=createComposeRule()
+    @Test fun projectionDetailShowsCalculationAndExpandableDistribution() {
+        compose.setContent { MaterialTheme { PlanningScreen(Ledger(),{}, {}) } }
+        compose.onNodeWithText("Ver detalle ›").performScrollTo().performClick()
+        compose.onNodeWithText("Detalle de proyección").assertIsDisplayed()
+        compose.onNodeWithText("Cómo se calcula tu disponible").assertIsDisplayed()
+        compose.onNodeWithText("Disponible inicial").assertIsDisplayed()
+        compose.onNodeWithText("Disponible final").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Saldo total proyectado").assertDoesNotExist()
+        compose.onNodeWithText("Distribución estimada del saldo").performScrollTo().performClick()
+        compose.onNodeWithText("Saldo total proyectado").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Reservado proyectado").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Distribución estimada del saldo").performScrollTo().performClick()
+        compose.onNodeWithText("Saldo total proyectado").assertDoesNotExist()
+        compose.onNodeWithText("Cerrar").performClick()
+        compose.onNodeWithText("Detalle de proyección").assertDoesNotExist()
+    }
     @Test fun emptyPlannerShowsGuidanceAndUnifiedCreationMenu() {
         compose.setContent { MaterialTheme { PlanningScreen(Ledger(),{}, {}) } }
         compose.onNodeWithText("Agrega ingresos o gastos futuros para visualizar cómo evolucionarán tus finanzas.").performScrollTo().assertIsDisplayed()

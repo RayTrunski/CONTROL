@@ -162,17 +162,7 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
             TextButton(onClick={ attempt { ledger.copy(sources=ledger.sources.filterNot { it.id==source.id }) } }) { Text("Eliminar fuente (conserva historial)",fontSize=11.sp) }
         }
     }
-    if(details) AlertDialog(onDismissRequest={ details=false },title={ Text("Detalle de la proyección") },text={ Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Text(month.format(monthFormat))
-        Text("Disponible inicial proyectado: ${money(projection.opening)}")
-        Text("Ingresos previstos: ${money(projection.income)}")
-        Text("Gastos previstos: ${money(projection.expenses)}")
-        Text("Aportaciones previstas: ${money(projection.contributions)}")
-        Text("Disponible final proyectado: ${money(projection.closing)}")
-        Text("Saldo total proyectado: ${money(projection.assets)}")
-        Text("Reservado proyectado: ${money(projection.reserved)}")
-        Text("Las estimaciones no representan dinero recibido ni reservado.",fontSize=12.sp)
-    } },confirmButton={ TextButton(onClick={ details=false }) { Text("Cerrar") } })
+    if(details) ProjectionDetailSheet(projection,month) { details=false }
     if(newPlan) PlanDialog(ledger,month,editing,{ newPlan=false },initialType=initialType) { save(ledger.savePlan(it)); newPlan=false }
     postponing?.let { plan -> PostponePlanDialog(plan,{ postponing=null }) { day -> save(ledger.postponePlan(plan,day)); postponing=null } }
     if(newSource) SourceDialog(ledger,{ newSource=false }) { save(ledger.addSource(it)); newSource=false }
