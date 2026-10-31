@@ -6,6 +6,30 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 class PlanningTest {
+    @Test fun postponingRecurringOccurrenceMovesItWithoutDuplicatingOrChangingRealMoney() {
+        val source=IncomeSource(name="Mensual",cents=10000,account=a.id,cadence=Cadence.MONTHLY,anchor=month.atDay(1))
+        val ledger=funded().addSource(source)
+        val occurrence=ledger.plansFor(month).single()
+        val next=month.plusMonths(1)
+        val postponed=ledger.postponePlan(occurrence,next.atDay(2))
+        assertTrue(postponed.plansFor(month).isEmpty())
+        assertEquals(2,postponed.plansFor(next).size)
+        assertEquals(100000L,postponed.total)
+        assertEquals(100000L,postponed.projection(month).closing)
+        assertEquals(120000L,postponed.projection(next).closing)
+        val executed=postponed.confirmPlan(postponed.plans.first(),a.id)
+        assertEquals(110000L,executed.total)
+        assertThrows(IllegalArgumentException::class.java) { executed.postponePlan(executed.plans.first(),next.atDay(3)) }
+    }
+    @Test fun projectedAvailableSubtractsExistingAndFutureReservesAcrossMonths() {
+        val ledger=funded().post(Movement(type=Operation.RESERVE,cents=10000,account=a.id,goal=goal.id))
+            .savePlan(plan(Operation.RESERVE,20000)).savePlan(plan(Operation.EXPENSE,15000))
+        val result=ledger.projection(month.plusMonths(1))
+        assertEquals(85000L,result.assets)
+        assertEquals(30000L,result.reserved)
+        assertEquals(55000L,result.closing)
+        assertEquals(result.assets-result.reserved,result.closing)
+    }
     @Test fun browsingHistoricalMonthFiltersMovementsInThatMonth() {
         val filter=AnalysisFilter(viewDate=LocalDate.of(2024,2,20))
         assertEquals(LocalDate.of(2024,2,1)..LocalDate.of(2024,2,29),filter.range())

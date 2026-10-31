@@ -32,6 +32,9 @@ fun ControlApp(vm: FinanceViewModel = androidx.lifecycle.viewmodel.compose.viewM
     var settings by rememberSaveable { mutableStateOf(false) }
     var analysis by remember { mutableStateOf(false) }
     var planning by remember { mutableStateOf(false) }
+    var pendingDetail by remember { mutableStateOf<PlannedOperation?>(null) }
+    var planEditor by remember { mutableStateOf(false) }
+    var editingPlan by remember { mutableStateOf<PlannedOperation?>(null) }
     val filter by vm.filter.collectAsState()
     val saving by vm.saving.collectAsState()
     var editingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
@@ -63,8 +66,8 @@ fun ControlApp(vm: FinanceViewModel = androidx.lifecycle.viewmodel.compose.viewM
                     { backup.launch("control-respaldo.json") },{ restore.launch(arrayOf("application/json","text/plain")) },
                     { goal -> ledger=ledger.updateGoal(goal.copy(archived=false)) })
             } else if(planning) PlanningScreen(ledger,{ ledger=it },{ planning=false },{ settings=true }) else when(section) {
-                Section.HOME -> HomeScreen(ledger,alias,{ settings=true },{ if(it==Operation.RESERVE) newGoal=true else { operationGoal=null; operation=it } },{ analysis=true },{ section=Section.MOVEMENTS },{ detailMovement=it },{ planning=true },filter,{ vm.setFilter(it) })
-                Section.MOVEMENTS -> MovementsScreen(ledger,{ settings=true },{ operationGoal=null; operation=Operation.EXPENSE },{ detailMovement=it },filter,{ vm.setFilter(it) })
+                Section.HOME -> HomeScreen(ledger,alias,{ settings=true },{ if(it==Operation.RESERVE) newGoal=true else { operationGoal=null; operation=it } },{ analysis=true },{ section=Section.MOVEMENTS },{ detailMovement=it },{ planning=true },filter,{ vm.setFilter(it) },{ pendingDetail=it })
+                Section.MOVEMENTS -> MovementsScreen(ledger,{ settings=true },{ operationGoal=null; operation=Operation.EXPENSE },{ detailMovement=it },filter,{ vm.setFilter(it) },{ pendingDetail=it },{ editingPlan=null; planEditor=true })
                 Section.SAVINGS -> SavingsScreen(ledger,{ settings=true },{ newGoal=true },{ detailGoal=it; error=null })
             }
         }
@@ -77,6 +80,15 @@ fun ControlApp(vm: FinanceViewModel = androidx.lifecycle.viewmodel.compose.viewM
         vm.setFilter(if(visibleFilter.cadence==Cadence.CUSTOM && added.date !in visibleFilter.range()) visibleFilter.copy(customStart=added.date,customEnd=added.date) else visibleFilter)
         operation=null; operationGoal=null
     } }
+    pendingDetail?.let { plan ->
+        PlannedDetailSheet(ledger,plan,{ pendingDetail=null },{ editingPlan=plan; pendingDetail=null; planEditor=true },{ ledger=it })
+    }
+    if(planEditor) PlanDialog(ledger,java.time.YearMonth.from(editingPlan?.date ?: maxOf(java.time.LocalDate.now(),filter.range().start)),editingPlan,{ planEditor=false }) { plan ->
+        ledger=ledger.savePlan(plan)
+        val visible=filter.copy(account=plan.account,category=if(plan.type==Operation.EXPENSE) filter.category?.takeIf { it==plan.category } else null,viewDate=plan.date)
+        vm.setFilter(if(visible.cadence==Cadence.CUSTOM && plan.date !in visible.range()) visible.copy(customStart=plan.date,customEnd=plan.date) else visible)
+        planEditor=false; editingPlan=null
+    }
     if(profileOpen) TextEntryDialog("Tu perfil","Nombre o alias (opcional)",alias,{ profileOpen=false }) { vm.setAlias(it.trim()); profileOpen=false }
     if(accountOpen) TextEntryDialog("Nueva cuenta","Nombre de la cuenta","",{ accountOpen=false }) { ledger=ledger.addAccount(it); accountOpen=false }
     if(newGoal) NewGoalDialog({ newGoal=false }) { goal -> ledger=ledger.addGoal(goal); newGoal=false; detailGoal=goal }
@@ -109,6 +121,7 @@ fun ControlApp(vm: FinanceViewModel = androidx.lifecycle.viewmodel.compose.viewM
     if(saving) androidx.compose.ui.window.Dialog(onDismissRequest={}) { Surface { Row(Modifier.padding(24.dp),horizontalArrangement=Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Text("Guardando…") } } }
     if(analysis) AlertDialog(onDismissRequest={ analysis=false },title={ Text("Gastos del periodo") },text={ CategoryChart(ledger.analysisSummary(filter)) },confirmButton={ TextButton(onClick={ analysis=false }) { Text("Cerrar") } })
 }
+
 
 
 

@@ -49,7 +49,7 @@ data class Ledger(val accounts: List<Account> = emptyList(), val movements: List
     }
     internal fun validated(): Ledger {
         movements.forEach { m ->
-            require(m.date <= LocalDate.now()) { "Registra las operaciones futuras en Planificar." }; require(m.cents > 0) { "El importe debe ser mayor a cero." }
+            require(m.date <= LocalDate.now()) { "Usa Crear operación futura en Movimientos para una fecha futura." }; require(m.cents > 0) { "El importe debe ser mayor a cero." }
             require(accounts.any { it.id == m.account }) { "Cuenta inválida." }
             if(m.type == Operation.TRANSFER) require(m.destination != m.account && accounts.any { it.id == m.destination }) { "Selecciona otra cuenta de destino." }
             else require(m.destination == null)
@@ -72,3 +72,4 @@ fun parseCents(text: String): Long {
     require(Regex("[0-9]+(\\.[0-9]{0,2})?").matches(normalized)) { "Escribe un importe válido, por ejemplo 1900 o 1900.50." }
     return BigDecimal(normalized).movePointRight(2).longValueExact().also { require(it > 0) { "El importe debe ser positivo." } }
 }
+

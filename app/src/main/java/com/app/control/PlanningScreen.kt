@@ -32,6 +32,9 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
     var month by remember { mutableStateOf(YearMonth.now().plusMonths(1)) }
     var editing by remember { mutableStateOf<PlannedOperation?>(null) }
     var newPlan by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    var initialType by remember { mutableStateOf(Operation.EXPENSE) }
+    var postponing by remember { mutableStateOf<PlannedOperation?>(null) }
     var newSource by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<PlannedOperation?>(null) }
     var selectedAccount by remember { mutableStateOf(ledger.accounts.firstOrNull()?.id) }
@@ -45,7 +48,8 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
     val projection=ledger.projection(month)
     val plans=ledger.plansFor(month)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        ScreenHeader("Planificación","Organiza tus ingresos, gastos y metas futuras",onProfile)
+        TextButton(onClick=back,contentPadding=PaddingValues(0.dp)) { Text("‹ Volver") }
+        ScreenHeader("Planificación","Editor de operaciones futuras y fuentes recurrentes",onProfile)
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             IconButton(onClick={ month=month.minusMonths(1) },enabled=month>YearMonth.now(),modifier=Modifier.semantics { contentDescription="Mes anterior" }) { Text("‹",fontSize=24.sp,color=Muted) }
             Box(Modifier.weight(1f),contentAlignment=Alignment.Center) {
@@ -64,18 +68,22 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
         }
         Surface(shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Row { Text("Resumen del mes",Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Ink); Text(month.format(monthFormat).replaceFirstChar { it.titlecase(locale) },fontSize=10.sp,color=Muted) }
+                Row { Text("Resumen financiero",Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Ink); Text(month.format(monthFormat).replaceFirstChar { it.titlecase(locale) },fontSize=10.sp,color=Muted) }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     PlanningMetric("Ingresos\nprevistos",projection.income,"down",Green,Modifier.weight(1f))
                     PlanningMetric("Gastos\nprevistos",projection.expenses,"up",Color(0xFFFF6383),Modifier.weight(1f))
-                    PlanningMetric("Ahorro\nplanificado",projection.contributions,"pig",Color(0xFF438CFF),Modifier.weight(1f))
-                    PlanningMetric("Saldo\nproyectado",projection.closing,"list",if(projection.closing<0) MaterialTheme.colorScheme.error else Green,Modifier.weight(1f))
+                    PlanningMetric("Ahorro\nprevisto",projection.contributions,"pig",Color(0xFF438CFF),Modifier.weight(1f))
                 }
+                HorizontalDivider()
+                Text("Disponible proyectado",fontSize=13.sp,color=Muted)
+                Text(money(projection.closing),fontSize=28.sp,fontWeight=FontWeight.Bold,color=if(projection.closing<0) MaterialTheme.colorScheme.error else Green)
+                Text("Saldo proyectado: ${money(projection.assets)}",fontSize=12.sp,color=Muted)
+                Text("Reservado proyectado: ${money(projection.reserved)}",fontSize=12.sp,color=Muted)
             }
         }
         Surface(shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically) { Text("Proyección de saldo",Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Ink); TextButton(onClick={ details=true },contentPadding=PaddingValues(0.dp)) { Text("Ver detalle ›",fontSize=10.sp) } }
+                Row(verticalAlignment=Alignment.CenterVertically) { Text("Evolución financiera",Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Ink); TextButton(onClick={ details=true },contentPadding=PaddingValues(0.dp)) { Text("Ver detalle ›",fontSize=10.sp) } }
                 ProjectionChart(ledger,month)
             }
         }
@@ -87,12 +95,25 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Text("Planificación del mes",Modifier.weight(1f),fontSize=16.sp,fontWeight=FontWeight.SemiBold,color=Ink)
-            Button(onClick={ editing=null; newPlan=true },contentPadding=PaddingValues(horizontal=14.dp,vertical=4.dp)) { Glyph("plus",MaterialTheme.colorScheme.onPrimary,Modifier.size(16.dp)); Text(" Agregar",fontSize=12.sp) }
+            Column(Modifier.weight(1f)) { Text("Operaciones previstas",fontSize=16.sp,fontWeight=FontWeight.SemiBold,color=Ink); Text("${plans.count { it.status==PlanStatus.PENDING }} pendientes",fontSize=11.sp,color=Muted) }
+            Box {
+                Button(onClick={ adding=true },contentPadding=PaddingValues(horizontal=14.dp,vertical=4.dp)) { Glyph("plus",MaterialTheme.colorScheme.onPrimary,Modifier.size(16.dp)); Text(" Agregar",fontSize=12.sp) }
+                DropdownMenu(expanded=adding,onDismissRequest={ adding=false }) {
+                    listOf("Ingreso previsto" to Operation.INCOME,"Gasto previsto" to Operation.EXPENSE,"Aportación a apartado" to Operation.RESERVE).forEach { (label,operation) ->
+                        DropdownMenuItem(text={ Text(label) },onClick={ adding=false; editing=null; initialType=operation; newPlan=true })
+                    }
+                    DropdownMenuItem(text={ Text("Nueva recurrencia") },onClick={ adding=false; newSource=true })
+                }
+            }
         }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         val visible=plans.filter { type==null || it.type==type }
-        if(visible.isEmpty()) Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) { Text("Sin operaciones previstas para este mes.",Modifier.fillMaxWidth().padding(20.dp),fontSize=13.sp,color=Muted) }
+        if(visible.isEmpty()) Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(if(plans.isEmpty()) "Todavía no tienes operaciones planificadas." else "Sin operaciones para este filtro.",fontSize=13.sp,color=Muted)
+                TextButton(onClick={ adding=true }) { Text("Agregar operación") }
+            }
+        }
         visible.groupBy { it.date }.forEach { (date,entries) ->
             Text(date.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM 'de' yyyy",locale)).replaceFirstChar { it.titlecase(locale) },fontSize=10.sp,color=Muted)
             entries.forEach { p ->
@@ -113,9 +134,10 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
                             }
                             Text("›",color=Muted,fontSize=20.sp)
                         }
-                        if(p.status==PlanStatus.PENDING && expanded==p.id) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
+                        if(p.status==PlanStatus.PENDING && expanded==p.id) Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.End) {
                             TextButton(onClick={ editing=p; newPlan=true },contentPadding=PaddingValues(6.dp)) { Glyph("edit",MaterialTheme.colorScheme.primary,Modifier.size(14.dp)); Text("Editar",fontSize=11.sp) }
-                            TextButton(onClick={ selectedAccount=p.account ?: ledger.accounts.firstOrNull()?.id; confirming=p },contentPadding=PaddingValues(6.dp)) { Glyph("check",MaterialTheme.colorScheme.primary,Modifier.size(14.dp)); Text("Confirmar",fontSize=11.sp) }
+                            TextButton(onClick={ selectedAccount=p.account ?: ledger.accounts.firstOrNull()?.id; confirming=p },contentPadding=PaddingValues(6.dp)) { Glyph("check",MaterialTheme.colorScheme.primary,Modifier.size(14.dp)); Text("Marcar como realizada",fontSize=11.sp) }
+                            TextButton(onClick={ postponing=p },contentPadding=PaddingValues(6.dp)) { Text("Posponer",fontSize=11.sp) }
                             TextButton(onClick={ attempt { ledger.cancelPlan(p) } },contentPadding=PaddingValues(6.dp)) { Glyph("cancel",MaterialTheme.colorScheme.primary,Modifier.size(14.dp)); Text("Cancelar",fontSize=11.sp) }
                             TextButton(onClick={ attempt { ledger.removePlan(p) } },contentPadding=PaddingValues(6.dp)) { Glyph("delete",MaterialTheme.colorScheme.primary,Modifier.size(14.dp)); Text("Eliminar",fontSize=11.sp) }
                         }
@@ -124,12 +146,17 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
             }
         }
         Surface(shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.primaryContainer) {
-            Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Saldo estimado al final de ${month.month.getDisplayName(java.time.format.TextStyle.FULL,locale)}",fontSize=11.sp,color=Ink); Text("Estimación basada en tus operaciones pendientes.",fontSize=9.sp,color=Muted) }
-                Text(money(projection.closing),fontWeight=FontWeight.Bold,fontSize=14.sp,color=if(projection.closing<0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("Cierre estimado · ${month.format(monthFormat)}",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Ink)
+                val hasPending=ledger.plansIn(LocalDate.now()..month.atEndOfMonth()).any { it.status==PlanStatus.PENDING }
+                Text(when {
+                    !hasPending -> "Sin operaciones previstas suficientes para calcular cambios en el saldo."
+                    projection.closing<0 -> "Tus operaciones previstas superan el dinero disponible. Revisa gastos y aportaciones."
+                    projection.closing==0L -> "Tu disponible proyectado queda en cero después de gastos y apartados."
+                    else -> "Tus operaciones previstas dejan dinero disponible después de gastos y apartados."
+                },fontSize=12.sp,color=if(projection.closing<0) MaterialTheme.colorScheme.error else Muted)
             }
         }
-        OutlinedButton(onClick={ newSource=true },modifier=Modifier.fillMaxWidth()) { Text("Agregar fuente de ingreso recurrente",fontSize=12.sp) }
         ledger.sources.forEach { source ->
             Text("${source.name} · ${source.cadence.title} · ${money(source.cents)}",fontSize=12.sp,color=Ink)
             TextButton(onClick={ attempt { ledger.copy(sources=ledger.sources.filterNot { it.id==source.id }) } }) { Text("Eliminar fuente (conserva historial)",fontSize=11.sp) }
@@ -137,15 +164,17 @@ internal fun PlanningScreen(ledger: Ledger, save: (Ledger)->Unit, back: ()->Unit
     }
     if(details) AlertDialog(onDismissRequest={ details=false },title={ Text("Detalle de la proyección") },text={ Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text(month.format(monthFormat))
-        Text("Saldo libre inicial proyectado: ${money(projection.opening)}")
+        Text("Disponible inicial proyectado: ${money(projection.opening)}")
         Text("Ingresos previstos: ${money(projection.income)}")
         Text("Gastos previstos: ${money(projection.expenses)}")
         Text("Aportaciones previstas: ${money(projection.contributions)}")
-        Text("Saldo libre final proyectado: ${money(projection.closing)}")
-        Text("Saldo patrimonial proyectado: ${money(projection.assets)}")
+        Text("Disponible final proyectado: ${money(projection.closing)}")
+        Text("Saldo total proyectado: ${money(projection.assets)}")
+        Text("Reservado proyectado: ${money(projection.reserved)}")
         Text("Las estimaciones no representan dinero recibido ni reservado.",fontSize=12.sp)
     } },confirmButton={ TextButton(onClick={ details=false }) { Text("Cerrar") } })
-    if(newPlan) PlanDialog(ledger,month,editing,{ newPlan=false }) { save(ledger.savePlan(it)); newPlan=false }
+    if(newPlan) PlanDialog(ledger,month,editing,{ newPlan=false },initialType=initialType) { save(ledger.savePlan(it)); newPlan=false }
+    postponing?.let { plan -> PostponePlanDialog(plan,{ postponing=null }) { day -> save(ledger.postponePlan(plan,day)); postponing=null } }
     if(newSource) SourceDialog(ledger,{ newSource=false }) { save(ledger.addSource(it)); newSource=false }
     confirming?.let { p -> AlertDialog(onDismissRequest={ confirming=null },title={ Text("Confirmar operación real") },text={ Column {
         Text("Se registrará hoy por ${money(p.cents)}.")
@@ -166,6 +195,10 @@ private fun PlanningMetric(label: String, value: Long, icon: String, tint: Color
 private fun ProjectionChart(ledger: Ledger, selected: YearMonth) {
     val start=maxOf(YearMonth.now(),selected.minusMonths(2))
     val months=(0L..5L).map { start.plusMonths(it) }
+    if(ledger.plansIn(LocalDate.now()..months.last().atEndOfMonth()).none { it.status==PlanStatus.PENDING }) {
+        Text("Agrega ingresos o gastos futuros para visualizar cómo evolucionarán tus finanzas.",Modifier.fillMaxWidth().padding(vertical=24.dp),fontSize=13.sp,color=Muted)
+        return
+    }
     val values=months.map { ledger.projection(it) }
     val colors=listOf(Color(0xFF36BD8B),Color(0xFFFF6383),Color(0xFFA75CF5),Color(0xFF3284FF))
     val grid=MaterialTheme.colorScheme.outline.copy(alpha=.25f)
@@ -179,7 +212,7 @@ private fun ProjectionChart(ledger: Ledger, selected: YearMonth) {
                 Text(money(((upper+lower)/2).toLong()),fontSize=8.sp,color=Muted,maxLines=1)
                 Text(money(lower.toLong()),fontSize=8.sp,color=Muted,maxLines=1)
             }
-            Canvas(Modifier.weight(1f).height(112.dp).semantics { contentDescription=months.zip(values).joinToString("; ") { (month,p) -> "$month: ingresos ${money(p.income)}, gastos ${money(p.expenses)}, ahorro ${money(p.contributions)}, saldo proyectado ${money(p.closing)}" } }) {
+            Canvas(Modifier.weight(1f).height(112.dp).semantics { contentDescription=months.zip(values).joinToString("; ") { (month,p) -> "$month: ingresos ${money(p.income)}, gastos ${money(p.expenses)}, ahorro ${money(p.contributions)}, disponible proyectado ${money(p.closing)}" } }) {
                 fun y(value: Double)=((upper-value)/(upper-lower)*size.height).toFloat()
                 val zero=y(0.0)
                 for(i in 0..4) { val position=size.height*i/4; drawLine(grid,Offset(0f,position),Offset(size.width,position),1f) }
@@ -201,7 +234,7 @@ private fun ProjectionChart(ledger: Ledger, selected: YearMonth) {
         }
         Row(Modifier.padding(start=42.dp)) { months.forEach { Text(it.format(DateTimeFormatter.ofPattern("MMM",locale)),Modifier.weight(1f),fontSize=9.sp,color=Muted,textAlign=androidx.compose.ui.text.style.TextAlign.Center) } }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-            listOf("Ingresos","Gastos","Ahorro","Saldo proyectado").forEachIndexed { i,label ->
+            listOf("Ingresos","Gastos","Ahorro","Disponible").forEachIndexed { i,label ->
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(3.dp)) { Box(Modifier.size(6.dp).background(colors[i],CircleShape)); Text(label,fontSize=8.sp,color=Muted) }
             }
         }
@@ -209,11 +242,11 @@ private fun ProjectionChart(ledger: Ledger, selected: YearMonth) {
 }
 
 @Composable
-private fun PlanDialog(ledger: Ledger, month: YearMonth, initial: PlannedOperation?, dismiss: ()->Unit, save: (PlannedOperation)->Unit) {
-    var type by remember { mutableStateOf(initial?.type ?: Operation.EXPENSE) }
+internal fun PlanDialog(ledger: Ledger, month: YearMonth, initial: PlannedOperation?, dismiss: ()->Unit, initialType: Operation = Operation.EXPENSE, save: (PlannedOperation)->Unit) {
+    var type by remember { mutableStateOf(initial?.type ?: initialType) }
     var name by remember { mutableStateOf(initial?.description.orEmpty()) }
     var amount by remember { mutableStateOf(initial?.cents?.let { java.math.BigDecimal.valueOf(it,2).toPlainString() }.orEmpty()) }
-    var date by remember { mutableStateOf((initial?.date ?: month.atDay(1)).toString()) }
+    var date by remember { mutableStateOf((initial?.date ?: maxOf(LocalDate.now(),month.atDay(1))).toString()) }
     var account by remember { mutableStateOf(initial?.account) }
     var category by remember { mutableStateOf(initial?.category ?: expenseCategories.first()) }
     var subcategory by remember { mutableStateOf(initial?.subcategory.orEmpty()) }
@@ -250,3 +283,16 @@ private fun SourceDialog(ledger: Ledger,dismiss: ()->Unit,save: (IncomeSource)->
     } },confirmButton={ Button(modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),onClick={ runCatching { save(IncomeSource(name=name,cents=parseCents(amount),account=account ?: error("Crea una cuenta primero."),cadence=cadence,anchor=LocalDate.parse(date),firstDay=first.toInt(),secondDay=second.toInt())) }.onFailure { error=it.message } }) { Text("Guardar") } },dismissButton={ OutlinedButton(modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),onClick=dismiss) { Text("Cancelar") } })
 }
 
+
+
+
+@Composable
+internal fun PostponePlanDialog(plan: PlannedOperation,dismiss: ()->Unit,save: (LocalDate)->Unit) {
+    var date by remember(plan.id) { mutableStateOf(maxOf(LocalDate.now(),plan.date).plusDays(1).toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(onDismissRequest=dismiss,title={ Text("Posponer operación") },text={ Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Text(plan.description)
+        FormTextField(date,{ date=it },icon=fieldIcon("Fecha aaaa-mm-dd"),label={ Text("Nueva fecha aaaa-mm-dd") })
+        error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+    } },confirmButton={ TextButton(onClick={ runCatching { save(LocalDate.parse(date)) }.onFailure { error=it.message } }) { Text("Posponer") } },dismissButton={ TextButton(onClick=dismiss) { Text("Cancelar") } })
+}

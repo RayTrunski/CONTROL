@@ -117,7 +117,7 @@ internal fun Glyph(kind: String, color: Color = Muted, modifier: Modifier = Modi
 }
 
 @Composable
-internal fun HomeScreen(ledger: Ledger, alias: String, onProfile: () -> Unit, onAction: (Operation) -> Unit, onAnalysis: () -> Unit, onMovements: () -> Unit = {}, onMovement: (Movement) -> Unit = {}, onPlan: () -> Unit = {}, filter: AnalysisFilter = AnalysisFilter(), onFilter: (AnalysisFilter)->Unit = {}) {
+internal fun HomeScreen(ledger: Ledger, alias: String, onProfile: () -> Unit, onAction: (Operation) -> Unit, onAnalysis: () -> Unit, onMovements: () -> Unit = {}, onMovement: (Movement) -> Unit = {}, onPlan: () -> Unit = {}, filter: AnalysisFilter = AnalysisFilter(), onFilter: (AnalysisFilter)->Unit = {}, onPending: (PlannedOperation)->Unit = {}) {
     val summary = ledger.analysisSummary(filter)
     val hidden=false
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(top=18.dp,bottom=24.dp), verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -160,17 +160,11 @@ internal fun HomeScreen(ledger: Ledger, alias: String, onProfile: () -> Unit, on
             accountIds.forEachIndexed { index,id -> Box(Modifier.padding(horizontal=3.dp).size(7.dp).clip(CircleShape).background(if(index==pager.currentPage) Green else Color(0xFFCBD2DC)).clickable { onFilter(filter.copy(account=id)) }.semantics { contentDescription=if(id==null) "Todas las cuentas" else ledger.accounts.first { it.id==id }.name }) }
         }
         SharedFilters(ledger,filter,onFilter,showAccount=false)
-        Surface(onClick=onPlan,shape=RoundedCornerShape(18.dp),color=Green.copy(alpha=.08f)) {
-            Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(38.dp).background(MaterialTheme.colorScheme.surface,CircleShape),contentAlignment=Alignment.Center) { Glyph("calendar",Green) }
-                Column(Modifier.weight(1f)) { Text("Planificar",fontWeight=FontWeight.SemiBold,fontSize=14.sp,color=Ink); Text("Revisa y organiza tus próximos meses",color=Muted,fontSize=11.sp) }
-                Text("›",color=Green,fontSize=25.sp)
-            }
-        }
         Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
             MetricCard("Ingresos del periodo",summary.income,summary.previousIncome,summary.incomeBars,Green,"down",hidden,Modifier.weight(1f))
             MetricCard("Gastos del periodo",summary.expenses,summary.previousExpenses,summary.expenseBars,Red,"up",hidden,Modifier.weight(1f))
         }
+        PeriodProjectionCard(ledger,filter,onPlan,onPending)
         Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Text("Gastos por categoría",Modifier.weight(1f),fontSize=17.sp,fontWeight=FontWeight.Bold,color=Ink)
@@ -298,3 +292,4 @@ private fun EmptyHomePreview() {
         Scaffold(bottomBar={ BottomBar(Section.HOME,{}) }) { padding -> Box(Modifier.padding(padding)) { HomeScreen(Ledger(),"",{},{},{}) } }
     }
 }
+

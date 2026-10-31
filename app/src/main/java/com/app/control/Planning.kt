@@ -9,7 +9,9 @@ enum class Cadence(val title: String) { WEEKLY("Semanal"), BIWEEKLY("Catorcenal"
 enum class PlanStatus(val title: String) { PENDING("Pendiente"), EXECUTED("Ejecutado"), CANCELLED("Cancelado") }
 data class IncomeSource(val id: String = UUID.randomUUID().toString(), val name: String, val cents: Long, val account: String, val cadence: Cadence, val anchor: LocalDate, val firstDay: Int = 15, val secondDay: Int = 31, val end: LocalDate? = null)
 data class PlannedOperation(val id: String = UUID.randomUUID().toString(), val type: Operation, val cents: Long, val description: String, val date: LocalDate, val account: String? = null, val category: String = "Otros", val subcategory: String = "", val goal: String? = null, val status: PlanStatus = PlanStatus.PENDING, val movementId: String? = null, val executedDate: LocalDate? = null, val source: String? = null)
-data class Projection(val opening: Long, val income: Long, val expenses: Long, val contributions: Long, val closing: Long, val assets: Long)
+data class Projection(val opening: Long, val income: Long, val expenses: Long, val contributions: Long, val closing: Long, val assets: Long) {
+    val reserved: Long get() = Math.subtractExact(assets,closing)
+}
 data class AnalysisFilter(val account: String? = null, val category: String? = null, val cadence: Cadence = Cadence.MONTHLY, val anchor: LocalDate = LocalDate.now(), val firstDay: Int = 15, val secondDay: Int = 31, val customStart: LocalDate = LocalDate.now(), val customEnd: LocalDate = LocalDate.now(), val viewDate: LocalDate? = null) {
     fun range(today: LocalDate = viewDate ?: LocalDate.now()): ClosedRange<LocalDate> = when(cadence) {
         Cadence.WEEKLY, Cadence.BIWEEKLY -> {
@@ -66,6 +68,12 @@ fun Ledger.cancelPlan(plan: PlannedOperation): Ledger {
     return copy(plans=plans.filterNot { it.id==plan.id }+plan.copy(status=PlanStatus.CANCELLED))
 }
 fun Ledger.removePlan(plan: PlannedOperation): Ledger = if(plan.source!=null) cancelPlan(plan) else copy(plans=plans.filterNot { it.id==plan.id })
+fun Ledger.postponePlan(plan: PlannedOperation,date: LocalDate,today: LocalDate=LocalDate.now()): Ledger {
+    val current=plans.firstOrNull { it.id==plan.id } ?: plansFor(YearMonth.from(plan.date)).firstOrNull { it.id==plan.id } ?: error("Planificación inexistente.")
+    require(current.status==PlanStatus.PENDING) { "Solo puedes posponer operaciones pendientes." }
+    require(date>current.date && date>=today) { "Selecciona una fecha posterior a la prevista y no anterior a hoy." }
+    return savePlan(current.copy(date=date))
+}
 fun Ledger.projection(month: YearMonth, today: LocalDate = LocalDate.now()): Projection {
     require(month>=YearMonth.from(today))
     var free=Math.subtractExact(total,held)

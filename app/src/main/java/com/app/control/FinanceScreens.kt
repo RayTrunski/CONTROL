@@ -80,9 +80,10 @@ internal fun Ledger.filteredMovements(query: String,type: Operation?,month: Year
 }.sortedByDescending { it.date }
 
 @Composable
-internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> Unit,onMovement: (Movement) -> Unit, sharedFilter: AnalysisFilter = AnalysisFilter(), onFilter: (AnalysisFilter)->Unit = {}) {
+internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> Unit,onMovement: (Movement) -> Unit, sharedFilter: AnalysisFilter = AnalysisFilter(), onFilter: (AnalysisFilter)->Unit = {}, onPending: (PlannedOperation)->Unit = {}, onCreatePlan: ()->Unit = {}) {
     var type by rememberSaveable { mutableStateOf<Operation?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    var activityView by rememberSaveable { mutableStateOf(ActivityView.ALL) }
     var knownCount by remember { mutableIntStateOf(ledger.movements.size) }
     LaunchedEffect(ledger.movements.size) {
         if(ledger.movements.size>knownCount) { type=null; query="" }
@@ -90,10 +91,18 @@ internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> 
     }
     val category=sharedFilter.category
     var filters by remember { mutableStateOf(false) }
-    val entries=ledger.filteredMovements(query,type,null,sharedFilter.account,sharedFilter.category).filter(sharedFilter::matches)
+    val entries=ledger.activity(sharedFilter,activityView,query,type)
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(top=18.dp,bottom=88.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            ScreenHeader("Movimientos","Todos tus ingresos, gastos y transferencias",onSettings)
+            ScreenHeader("Movimientos","Lo que pasó y lo que está por pasar",onSettings)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                ActivityView.entries.forEach { view ->
+                    Surface(onClick={ activityView=view },modifier=Modifier.weight(1f).semantics { selected=activityView==view },shape=RoundedCornerShape(12.dp),color=if(activityView==view) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant) {
+                        Box(Modifier.padding(vertical=12.dp),contentAlignment=Alignment.Center) { Text(view.title,fontSize=12.sp,color=if(activityView==view) MaterialTheme.colorScheme.primary else Muted) }
+                    }
+                }
+            }
+            TextButton(onClick={ activityView=ActivityView.PENDING; onCreatePlan() },contentPadding=PaddingValues(0.dp)) { Glyph("calendar",MaterialTheme.colorScheme.primary,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Crear operación futura",fontSize=12.sp) }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
                 listOf("Todos" to null,"Ingresos" to Operation.INCOME,"Gastos" to Operation.EXPENSE,"Transferencias" to Operation.TRANSFER,"Aportaciones" to Operation.RESERVE,"Retiros" to Operation.RELEASE).forEach { (label,value) ->
                     Surface(onClick={ type=value },shape=RoundedCornerShape(10.dp),color=if(type==value) Green else MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.semantics { selected=type==value }) {
@@ -112,23 +121,36 @@ internal fun MovementsScreen(ledger: Ledger,onSettings: () -> Unit,onAdd: () -> 
                     Text("Sin movimientos",fontWeight=FontWeight.SemiBold)
                     Text("Registra una operación o cambia los filtros para consultar tu historial.",color=Muted,fontSize=13.sp)
                     if(ledger.movements.isNotEmpty()) TextButton(onClick={
-                        type=null; query=""
+                        type=null; query=""; activityView=ActivityView.ALL
                         onFilter(sharedFilter.copy(account=null,category=null,cadence=Cadence.CUSTOM,customStart=ledger.movements.minOf { it.date },customEnd=LocalDate.now(),viewDate=null))
                     }) { Text("Ver todos los movimientos") }
                 }
             }
-            entries.groupBy { it.date }.forEach { (date,movements) ->
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    Text(date.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM 'de' yyyy",MexicanLocale)).replaceFirstChar { it.titlecase(MexicanLocale) },Modifier.weight(1f),fontSize=12.sp,color=Muted)
-                    val net=movements.fold(0L) { sum,m -> Math.addExact(sum,when(m.type) { Operation.INCOME -> m.cents; Operation.EXPENSE -> -m.cents; else -> 0L }) }
-                    Text("${if(net>0) "+ " else if(net<0) "- " else ""}${money(if(net<0) Math.negateExact(net) else net)}",fontSize=12.sp,fontWeight=FontWeight.Medium,color=if(net>0) Green else Muted)
+            entries.groupBy { it.date }.forEach { (date,items) ->
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text(date.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM 'de' yyyy",MexicanLocale)).replaceFirstChar { it.titlecase(MexicanLocale) },modifier=Modifier.weight(1f),fontSize=12.sp,color=Muted)
+                    val actual=items.mapNotNull { it.movement }
+                    if(actual.isNotEmpty()) {
+                        val net=actual.fold(0L) { sum,m -> Math.addExact(sum,when(m.type) { Operation.INCOME -> m.cents; Operation.EXPENSE -> -m.cents; else -> 0L }) }
+                        Text("${if(net>0) "+ " else ""}${money(net)}",fontSize=12.sp,color=if(net>0) Green else Muted)
+                    }
                 }
                 Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
-                    Column(Modifier.padding(horizontal=8.dp)) { movements.forEach { m -> MovementRow(ledger,m) { onMovement(m) } } }
+                    Column(Modifier.padding(horizontal=8.dp)) {
+                        items.forEach { item ->
+                            item.movement?.let { m ->
+                                Column {
+                                    Text("Confirmado",Modifier.padding(start=5.dp,top=8.dp),fontSize=10.sp,color=Green)
+                                    MovementRow(ledger,m) { onMovement(m) }
+                                }
+                            }
+                            item.plan?.let { p -> PlannedActivityRow(ledger,p) { onPending(p) } }
+                        }
+                    }
                 }
             }
         }
-        FloatingActionButton(onClick=onAdd,containerColor=Green,contentColor=Color.White,shape=CircleShape,modifier=Modifier.align(Alignment.BottomEnd).padding(20.dp).semantics { contentDescription="Registrar movimiento" }) { Glyph("plus",Color.White,Modifier.size(28.dp)) }
+        FloatingActionButton(onClick={ activityView=ActivityView.CONFIRMED; onAdd() },containerColor=Green,contentColor=Color.White,shape=CircleShape,modifier=Modifier.align(Alignment.BottomEnd).padding(20.dp).semantics { contentDescription="Registrar movimiento" }) { Glyph("plus",Color.White,Modifier.size(28.dp)) }
     }
     if(filters) AlertDialog(onDismissRequest={ filters=false },title={ Text("Filtrar por categoría") },text={
         Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -165,17 +187,32 @@ internal fun SavingsScreen(ledger: Ledger,onSettings: () -> Unit,onNew: () -> Un
                 }
             }
         }
+        val futureContributions=ledger.plans.filter { it.type==Operation.RESERVE && it.status==PlanStatus.PENDING && it.date>=LocalDate.now() }
+        if(futureContributions.isNotEmpty()) Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
+            Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Glyph("calendar",MaterialTheme.colorScheme.primary)
+                Column {
+                    Text("Aportaciones futuras planeadas",fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                    Text("${money(futureContributions.fold(0L) { sum,p -> Math.addExact(sum,p.cents) })} · ${futureContributions.size} pendientes",fontSize=12.sp,color=Muted)
+                }
+            }
+        }
         Row(verticalAlignment=Alignment.CenterVertically) {
             Text("Mis apartados",Modifier.weight(1f),fontSize=19.sp,fontWeight=FontWeight.Bold,color=Ink)
             Button(onClick=onNew,contentPadding=PaddingValues(horizontal=16.dp,vertical=7.dp)) { Glyph("plus",Color.White,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Nuevo",fontSize=12.sp) }
         }
-        if(ledger.goals.isEmpty()) Surface(shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
+        if(ledger.goals.none { !it.archived }) Surface(shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("Tu próxima meta empieza aquí",fontWeight=FontWeight.SemiBold)
                 Text("Crea un apartado, define cuánto quieres ahorrar y agrega fondos desde tus cuentas.",color=Muted,fontSize=13.sp)
             }
         }
-        ledger.goals.filterNot { it.archived }.forEachIndexed { index,goal ->
+        val visibleGoals=ledger.goals.filterNot { it.archived }.sortedBy { ledger.goalBalance(it.id)>=it.target }
+        visibleGoals.forEachIndexed { index,goal ->
+            val completed=ledger.goalBalance(goal.id)>=goal.target
+            if(index==0 || completed!=(ledger.goalBalance(visibleGoals[index-1].id)>=visibleGoals[index-1].target)) {
+                Text(if(completed) "Metas completadas" else "Metas en progreso",fontSize=15.sp,fontWeight=FontWeight.SemiBold)
+            }
             val color=GoalColors[index%GoalColors.size]
             val saved=ledger.goalBalance(goal.id)
             Surface(onClick={ onGoal(goal) },shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
@@ -188,7 +225,13 @@ internal fun SavingsScreen(ledger: Ledger,onSettings: () -> Unit,onNew: () -> Un
                             Text(" / ${money(goal.target)}",Modifier.weight(1f),fontSize=12.sp,color=Muted)
                             Text(percent(saved,goal.target),fontSize=12.sp,color=Muted)
                         }
-                        ProgressTrack(ratio(saved,goal.target),color,Color(0xFFE8ECF1))
+                        ProgressTrack(ratio(saved,goal.target),color,MaterialTheme.colorScheme.surfaceVariant)
+                        ledger.nextContribution(goal.id)?.let { next ->
+                            Row(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Glyph("calendar",color,Modifier.size(15.dp))
+                                Text("Próxima aportación: ${money(next.cents)} · ${next.date.format(DateTimeFormatter.ofPattern("d MMM",MexicanLocale))}",fontSize=11.sp,color=Muted)
+                            }
+                        }
                         Text(if(saved>=goal.target) "¡Meta completada!" else "Meta: ${goal.deadline?.format(DateTimeFormatter.ofPattern("dd MMM yyyy",MexicanLocale)) ?: "Sin fecha"}",fontSize=11.sp,color=Muted)
                     }
                     Text("›",Modifier.align(Alignment.CenterVertically),fontSize=25.sp,color=Muted)
